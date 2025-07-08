@@ -12,15 +12,30 @@ exports.getOrders = async (req, res, next) => {
   }
 };
 
-const pool = require("../db");
-
-exports.getOrders = async (req, res, next) => {
+exports.getOrderById = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const result = await pool.query("SELECT * FROM orders WHERE user_id = $1", [
-      userId,
-    ]);
-    res.json(result.rows);
+    const orderId = parseInt(req.params.id, 10);
+
+    const orderResult = await pool.query(
+      "SELECT * FROM orders WHERE id = $1 AND user_id = $2",
+      [orderId, userId]
+    );
+
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Fetch order items
+    const orderItemsResult = await pool.query(
+      "SELECT * FROM order_items WHERE order_id = $1",
+      [orderId]
+    );
+
+    const order = orderResult.rows[0];
+    order.items = orderItemsResult.rows;
+
+    res.json(order);
   } catch (err) {
     next(err);
   }
@@ -43,7 +58,6 @@ exports.placeOrder = async (req, res, next) => {
 
     if (cart.length === 0) {
       await client.query("ROLLBACK");
-      // Forward a validation error with status 400
       const error = new Error("Cart is empty");
       error.status = 400;
       throw error;
@@ -90,17 +104,17 @@ exports.placeOrder = async (req, res, next) => {
       }
     }
 
-    // Calculate total price
+    // Calculate total price for response only
     let totalPrice = 0;
     for (const item of cart) {
       const product = productsMap.get(item.product_id);
       totalPrice += product.price * item.quantity;
     }
 
-    // Create new order with total price
+    // Insert order WITHOUT total_price column
     const orderResult = await client.query(
-      "INSERT INTO orders (user_id, total_price) VALUES ($1, $2) RETURNING *",
-      [userId, totalPrice]
+      "INSERT INTO orders (user_id) VALUES ($1) RETURNING *",
+      [userId]
     );
     const order = orderResult.rows[0];
 
@@ -129,7 +143,7 @@ exports.placeOrder = async (req, res, next) => {
     res.status(201).json({
       message: "Order placed successfully",
       orderId: order.id,
-      totalPrice,
+      totalPrice, // send total price as info but not stored in DB
     });
   } catch (err) {
     await client.query("ROLLBACK");

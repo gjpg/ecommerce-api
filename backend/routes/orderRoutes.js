@@ -5,5 +5,6 @@ const authenticate = require("../middleware/authMiddleware");
 
 router.get("/", authenticate, orderController.getOrders);
 router.post("/", authenticate, orderController.placeOrder);
+router.get("/:id", authenticate, orderController.getOrderById);
 
 module.exports = router;
